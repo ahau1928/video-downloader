@@ -1,0 +1,22 @@
+﻿[
+    {
+        "file":  "deno.exe",
+        "bytes":  97316640,
+        "sha256":  "2FF9493DFA356BE2975F477025EA770088E9E9CB2C83D983236D13561B96B7A6"
+    },
+    {
+        "file":  "ffmpeg.exe",
+        "bytes":  102856192,
+        "sha256":  "72A489ECCD008C2EC2C0A5856C5C75BC3D8BBFA90166C4566865C246445E6AA3"
+    },
+    {
+        "file":  "ffprobe.exe",
+        "bytes":  102652416,
+        "sha256":  "19202B23C0043F15AD1B7BCE2344F406FD52BD6EFD8F995CE02E7392A1CEC52F"
+    },
+    {
+        "file":  "yt-dlp.exe",
+        "bytes":  17840399,
+        "sha256":  "66674953FE251B89F4D08C5F0E35E0728679BD67AB3D7D05C0562AF101DD3E7A"
+    }
+]

@@ -1,0 +1,20 @@
+<script setup lang="ts">
+import {ref,onMounted,onBeforeUnmount} from 'vue';
+import {command,showError,notify,desktop,settings} from '../store';
+type Status={site:string;saved:boolean;updated?:number;source?:string;status:string};
+const statuses=ref<Status[]>([{site:"youtube",saved:false,status:"等待读取授权状态"},{site:"vimeo",saved:false,status:"等待读取授权状态"}]),busy=ref(false),folder=ref(''),help=ref(false);let timer:ReturnType<typeof setInterval>|undefined;
+const testUrl=ref(''),testResult=ref('');
+async function testAccess(){busy.value=true;testResult.value='正在用当前授权解析视频…';try{const url=new URL(testUrl.value.trim());if(url.protocol!=='https:'||!['youtube.com','www.youtube.com','youtu.be','vimeo.com','www.vimeo.com','player.vimeo.com'].includes(url.hostname))throw Error('请输入 YouTube 或 Vimeo 视频链接');const result=await command<{title:string}>('probe_video',{request:{url:url.href,proxy:settings.use_proxy?settings.proxy:null,cookies_browser:settings.cookies_browser||null,cookies_file:null}});testResult.value=`可访问：${result.title}。本次解析成功，不代表登录永久有效。`}catch(e){testResult.value=String(e)}finally{busy.value=false}}
+async function refresh(){statuses.value=await command<Status[]>('authorization_status')}
+async function connect(){busy.value=true;try{notify(await command<string>('connect_browser'),'settings')}catch(e){showError(e)}finally{busy.value=false}}
+async function reveal(){try{folder.value=await command<string>('extension_folder');await command('open_path',{path:folder.value});help.value=true}catch(e){showError(e)}}
+async function imported(site:string){busy.value=true;try{if(await command<boolean>('import_authorization',{site})){notify('本站登录信息已保存，请重新解析视频','settings');await refresh()}}catch(e){showError(e)}finally{busy.value=false}}
+async function clear(site:string){try{await command('clear_authorization',{site});await refresh();notify('已清除本站保存的授权；正在执行的任务将在结束后清理临时登录文件','settings')}catch(e){showError(e)}}
+onMounted(()=>{if(desktop){void refresh().catch(showError);timer=setInterval(()=>refresh().catch(()=>{}),3000)}});onBeforeUnmount(()=>clearInterval(timer));
+</script>
+<template><section class="browser-auth"><div class="setting"><div><strong>浏览器助手 · 推荐</strong><p>继续使用 Edge / Chrome，在视频页面授权后发送到等待队列。</p></div><button class="button primary" :disabled="busy" @click="connect">启用浏览器连接</button></div>
+<div class="inline"><button class="button" @click="reveal">打开配套扩展文件夹</button><button class="button quiet" @click="help=!help">安装与使用说明</button></div>
+<div v-if="help" class="output-plan auth-help"><ol><li>点击“启用浏览器连接”。</li><li>在 Edge 打开 edge://extensions，或 Chrome 打开 chrome://extensions，开启“开发人员模式／开发者模式”。</li><li>选择“加载解压缩的扩展／加载已解压的扩展程序”，选取配套扩展文件夹。<span v-if="folder" class="break">{{folder}}</span></li><li>在已登录的 YouTube / Vimeo 视频页点击浏览器助手，选择“授权并发送视频”。回到下载器点击“开始等待任务”。</li><li>只想更新已有链接的登录状态时，选择“仅更新登录信息”，然后在下载器重新解析。</li></ol><p>扩展为本地安装版，尚未上架扩展商店。首次需授权对应网站；无需关闭浏览器。网站验证或登录过期时仍需在浏览器完成验证并重新授权。</p></div>
+<div v-for="item in statuses" :key="item.site" class="setting"><div><strong>{{item.site==='youtube'?'YouTube':'Vimeo'}} 授权</strong><p>{{item.status}}</p><p v-if="item.updated">{{item.source}} · {{new Date(item.updated*1000).toLocaleString()}}</p></div><div class="inline"><button class="button" :disabled="busy" @click="imported(item.site)">导入 Cookie 文件</button><button class="button quiet" :disabled="!item.saved" @click="clear(item.site)">清除授权</button></div></div>
+<div class="inline"><input class="grow" v-model="testUrl" placeholder="粘贴 YouTube / Vimeo 视频链接，检测实际访问" aria-label="授权检测视频链接"><button class="button" :disabled="busy||!testUrl.trim()" @click="testAccess">检测视频访问</button></div><p class="fine break" role="status">{{testResult}}</p><p class="fine">登录信息按网站保存在本机，并使用 Windows 当前用户加密。导入文件仅保留所选网站的条目。保存成功不等于网站验证通过，请以视频解析结果为准。</p></section></template>
+<style scoped>.browser-auth{margin-top:20px;border-top:1px solid #e0e3ef}.auth-help{margin-top:14px;line-height:1.8}.auth-help ol{padding-left:20px;margin:0}.auth-help li{margin:6px 0}.auth-help .break{display:block}.browser-auth>.fine{margin-bottom:24px}</style>

@@ -1,0 +1,22 @@
+Video Downloader 0.2.0 - bundled independent command-line tools
+
+yt-dlp 2026.08.19 (official Windows standalone executable)
+Source and release: https://github.com/yt-dlp/yt-dlp/releases/tag/2026.08.19
+Project license: https://github.com/yt-dlp/yt-dlp/blob/2026.08.19/LICENSE
+The standalone distribution contains third-party Python libraries; see upstream licensing notes.
+EJS challenge solver 0.8.0 is bundled inside this official executable, not downloaded on demand.
+EJS source/license: https://github.com/yt-dlp/ejs
+
+FFmpeg and FFprobe 9.0.1, Windows essentials build by Gyan Doshi
+Build source: https://www.gyan.dev/ffmpeg/builds/
+FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/n9.0.1
+Build includes libx264 and is distributed under GPLv3. See LICENSE-FFmpeg.txt.
+Build configuration and included libraries are available from ffmpeg.exe -buildconf.
+
+Deno 2.9.6 (official Windows x86_64 executable)
+Source and release: https://github.com/denoland/deno/releases/tag/v2.9.6
+License: MIT; includes third-party components (V8, Rust crates).
+Upstream license: https://github.com/denoland/deno/blob/v2.9.6/LICENSE.md
+
+Exact download sources and SHA256 checksums: bundled-tools.json and checksums.json.
+These programs run as separate processes and retain their upstream licenses.

@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "视频下载器 · 浏览器助手",
+  "version": "0.3.0",
+  "description": "将 YouTube / Vimeo 视频及授权的登录信息发送到本机视频下载器。",
+  "permissions": [
+    "activeTab",
+    "cookies",
+    "nativeMessaging"
+  ],
+  "optional_host_permissions": [
+    "https://*.youtube.com/*",
+    "https://*.vimeo.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "发送到视频下载器"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvgZg2jIJ9D9MmPg3KZzJVpvH3xN6B2k43UkvNo2sVfZ2GjoEmLLKysrtEq/DhRWMS5st9ntFLUi66PLZGoQXX4EdBVKRcmgUOkJi0kkiAeiYVFrIf2Ng8MtnEliV3tEXxphsxbDueTdhPWM8XBIF38y4WWKSiNzxSSACZS81+FFSUipIgWVjAf86MITCzSrWFNwdYOLrq+gKviKhv2i9AFB1Q8iHP5DxQMX/uNB4CWJD+JJ/pGqORLe5tqNierGB4BiIad/BRHZe//cCC+f2UsWSVQflK3uqvqZ2QFzVt2PI6U8aCL2SKEa0yShsDP4tr9yITJIWDd0sjD4eGtYJ4wIDAQAB"
+}

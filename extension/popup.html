@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="popup.css"><title>视频下载器助手</title></head><body>
+<header><span class="logo">↓</span><div><h1>视频下载器</h1><p>在熟悉的浏览器里，继续观看。</p></div></header>
+<section><span class="eyebrow">当前页面</span><h2 id="site">正在读取…</h2><p id="title"></p></section>
+<p class="explain">点击后授权读取当前网站的 Cookie，仅传给本机下载器。发送的视频先进入等待队列。</p>
+<button id="send" disabled>授权并发送视频</button><button id="authorize" class="secondary" disabled>仅更新登录信息</button>
+<p id="status" role="status" aria-live="polite"></p><footer><button id="ping" class="link">检测下载器连接</button><span>0.3.0</span></footer>
+<details><summary>首次使用</summary><p>在下载器的“设置 → 网络与账号”点击“启用浏览器连接”。然后在已登录的 YouTube 或 Vimeo 页面使用本扩展。</p><p>登录失效后重新授权即可。本站授权可以在下载器里清除；浏览器访问权限可在扩展管理页撤销。软件关闭时发送的链接，会在下次启动后加入等待队列。</p></details>
+<script type="module" src="popup.js"></script></body></html>

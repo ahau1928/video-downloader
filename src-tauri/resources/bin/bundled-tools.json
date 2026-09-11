@@ -1,0 +1,23 @@
+{
+    "deno":  {
+                 "version":  "v2.9.6",
+                 "directory":  "deno-v2.9.6-1f1fbd9b",
+                 "source":  "https://github.com/denoland/deno/releases/download/v2.9.6/deno-x86_64-pc-windows-msvc.zip",
+                 "sha256":  "15e5300b0ba3c3695a7621d90160a746ec9e710228cee639afa9d580f6e3cd11",
+                 "display":  "deno 2.9.6 (stable, release, x86_64-pc-windows-msvc)"
+             },
+    "yt-dlp":  {
+                   "version":  "2026.08.19",
+                   "directory":  "yt-dlp-2026.08.19-eb651c81",
+                   "source":  "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
+                   "sha256":  "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+                   "display":  "2026.08.19"
+               },
+    "ffmpeg":  {
+                   "version":  "9.0.1",
+                   "directory":  "ffmpeg-9.0.1-ab8560f0",
+                   "source":  "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.1-essentials_build.zip",
+                   "sha256":  "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
+                   "display":  "ffmpeg version 9.0.1-essentials_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers"
+               }
+}
