@@ -3,6 +3,7 @@
 #[cfg(debug_assertions)]
 mod diagnostics;
 mod engine;
+mod audio_probe;
 mod transcode;
 mod browser_auth;
 mod process;
@@ -169,6 +170,7 @@ struct DownloadProgress {
 struct MediaStats {
     duration_seconds: f64,
     size_bytes: u64,
+    audio_codec: Option<String>,
 }
 
 #[derive(Debug)]
@@ -459,6 +461,8 @@ fn probe_metadata(
         .map(|items| items.iter().filter_map(parse_format).collect::<Vec<_>>())
         .unwrap_or_default();
 
+    if extractor.to_ascii_lowercase().contains("vimeo") { audio_probe::enrich(app, &json, &mut formats, proxy); }
+
     for format in &mut formats {
         if format.filesize.is_none() && format.filesize_approx.is_none() {
             if let (Some(duration),Some(rate))=(json.get("duration").and_then(Value::as_f64),format.tbr) {
@@ -547,6 +551,15 @@ fn parse_format(value: &Value) -> Option<FormatInfo> {
     })
 }
 
+// yt-dlp distinguishes an explicitly absent codec ("none") from unknown (null).
+// An audio-only rendition can omit acodec, as Vimeo HLS audio groups do.
+fn format_has_audio(format: &FormatInfo) -> bool {
+    match format.acodec.as_deref().filter(|c| !c.is_empty()) {
+        Some(codec) => codec != "none",
+        None => format.vcodec.as_deref() == Some("none"),
+    }
+}
+
 fn select_download_formats<'a>(
     metadata: &'a ProbeResult,
     height: Option<u64>,
@@ -563,7 +576,7 @@ fn select_download_formats<'a>(
                 best_video_format(metadata, None, false)
             }
         });
-    let audio = video.filter(|v| v.acodec.as_deref().unwrap_or("none") != "none").or_else(|| audio_format_id
+    let audio = video.filter(|v| format_has_audio(v)).or_else(|| audio_format_id
         .and_then(|id| metadata.formats.iter().find(|format| format.format_id == id))
         .or_else(|| preferred_audio_for_video(metadata, video))
         .or_else(|| best_audio_format(metadata, true))
@@ -583,7 +596,7 @@ fn select_download_formats<'a>(
     };
 
     let format_selector = match (video, audio) {
-        (Some(video), Some(_)) if video.acodec.as_deref().unwrap_or("none") != "none" => video.format_id.clone(),
+        (Some(video), Some(_)) if format_has_audio(video) => video.format_id.clone(),
         (Some(video), Some(audio)) => format!("{}+{}", video.format_id, audio.format_id),
         (Some(video), None) => video.format_id.clone(),
         (None, Some(audio)) => audio.format_id.clone(),
@@ -613,7 +626,7 @@ fn can_mux_mp4(video: Option<&FormatInfo>, audio: Option<&FormatInfo>) -> bool {
 }
 
 fn preferred_mp4_pair(metadata: &ProbeResult, video: &FormatInfo) -> bool {
-    let audio = if video.acodec.as_deref().unwrap_or("none") != "none" { Some(video) }
+    let audio = if format_has_audio(video) { Some(video) }
         else { preferred_audio_for_video(metadata, Some(video)).or_else(|| best_audio_format(metadata, true)).or_else(|| best_audio_format(metadata, false)) };
     can_mux_mp4(Some(video), audio)
 }
@@ -672,7 +685,7 @@ fn best_audio_format(metadata: &ProbeResult, aac_only: bool) -> Option<&FormatIn
         .formats
         .iter()
         .filter(|format| format.vcodec.as_deref().unwrap_or("none") == "none")
-        .filter(|format| format.acodec.as_deref().unwrap_or("none") != "none")
+        .filter(|format| format_has_audio(format))
         .filter(|format| {
             if !aac_only {
                 return true;
@@ -698,7 +711,7 @@ fn preferred_audio_for_video<'a>(
         .formats
         .iter()
         .filter(|format| format.vcodec.as_deref().unwrap_or("none") == "none")
-        .filter(|format| format.acodec.as_deref().unwrap_or("none") != "none")
+        .filter(|format| format_has_audio(format))
         .filter(|format| {
             let codec = format.acodec.as_deref().unwrap_or_default().to_ascii_lowercase();
             if prefer_opus {
@@ -1074,17 +1087,16 @@ fn probe_media_stats(app: &AppHandle, input_path: &Path) -> Result<MediaStats, S
             OsString::from("-v"),
             OsString::from("error"),
             OsString::from("-show_entries"),
-            OsString::from("format=duration"),
+            OsString::from("format=duration:stream=codec_type,codec_name"),
             OsString::from("-of"),
-            OsString::from("default=noprint_wrappers=1:nokey=1"),
+            OsString::from("json"),
             input_path.as_os_str().to_os_string(),
         ],
     )?;
-    let duration_seconds = output
-        .stdout
-        .trim()
-        .parse::<f64>()
-        .map_err(|error| format!("无法读取视频时长：{error}"))?;
+    let data:Value=serde_json::from_str(&output.stdout).map_err(|e|format!("无法读取媒体信息：{e}"))?;
+    let duration_seconds = data["format"]["duration"].as_str().and_then(|s|s.parse::<f64>().ok()).ok_or("无法读取视频时长")?;
+    let audio_codec=data["streams"].as_array().and_then(|streams|streams.iter().find(|s|s["codec_type"]=="audio"))
+        .map(|s|s["codec_name"].as_str().unwrap_or("unknown").to_string());
     if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
         return Err("视频时长无效，无法计算目标码率。".to_string());
     }
@@ -1096,6 +1108,7 @@ fn probe_media_stats(app: &AppHandle, input_path: &Path) -> Result<MediaStats, S
     Ok(MediaStats {
         duration_seconds,
         size_bytes,
+        audio_codec,
     })
 }
 
@@ -1194,7 +1207,10 @@ fn worker_thread_count() -> usize {
 fn main() {
     if browser_auth::native_entry(){return}
     tauri::Builder::default()
-        .setup(|app| { queue::init(app.handle());
+        .setup(|app| {
+            #[cfg(debug_assertions)] if diagnostics::vimeo_download(app.handle()){return Ok(())}
+            #[cfg(debug_assertions)] if diagnostics::vimeo_probe(app.handle()){return Ok(())}
+            queue::init(app.handle());
             #[cfg(debug_assertions)] if diagnostics::start(app.handle()){return Ok(())}
             browser_auth::start(app.handle()); updater::start_auto(app.handle()); Ok(()) })
         .on_window_event(|window,event| {if let tauri::WindowEvent::CloseRequested{api,..}=event {let q=window.state::<queue::Queue>();if !q.running.lock().unwrap().is_empty(){api.prevent_close();q.closing.store(true,std::sync::atomic::Ordering::Relaxed);q.data.lock().unwrap().paused=true;for flag in q.running.lock().unwrap().values(){flag.store(true,std::sync::atomic::Ordering::Relaxed);}let app=window.app_handle().clone();let _=window.hide();thread::spawn(move||{for _ in 0..100 {if app.state::<queue::Queue>().running.lock().unwrap().is_empty(){break}thread::sleep(std::time::Duration::from_millis(100));}app.exit(0);});}}})

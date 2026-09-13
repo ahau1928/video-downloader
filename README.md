@@ -2,13 +2,13 @@
 
 面向 Windows 的视频下载与批量转码工具，使用 Vue 3 + Tauri 2 构建。
 
-**当前版本：0.4.0 · Windows x64**
+**当前版本：0.4.2 · Windows x64**
 
 [下载安装包](https://github.com/ahau1928/video-downloader/releases/latest) · [转码使用说明](docs/transcoding.md) · [浏览器登录授权说明](docs/browser-helper.md)
 
 ## 下载与安装
 
-1. 打开上方 Release 页面，在 Assets 中下载 `video-downloader_0.4.0_x64-setup.exe`。`Source code` 是开发源码，不是安装包。
+1. 打开上方 Release 页面，在 Assets 中下载 `video-downloader_0.4.2_x64-setup.exe`。`Source code` 是开发源码，不是安装包。
 2. 关闭旧版软件后运行安装包。升级后会沿用已有设置与任务历史。
 3. 打开“设置 → 网络与账号”，按本机情况配置代理。**默认代理地址为 `http://127.0.0.1:7897`，没有该代理服务时请关闭代理或修改端口。**
 
@@ -93,7 +93,7 @@ npm run tauri:build
 
 ## 第三方组件
 
-0.4.0 安装包内置以下已核验版本，软件可继续检查更新：
+0.4.2 安装包内置以下已核验版本，软件可继续检查更新：
 
 | 组件 | 版本 |
 | --- | --- |

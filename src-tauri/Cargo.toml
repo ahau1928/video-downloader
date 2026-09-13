@@ -1,6 +1,6 @@
 [package]
 name = "lumen-video-downloader"
-version = "0.4.0"
+version = "0.4.2"
 description = "A polished desktop downloader for YouTube and Vimeo videos."
 authors = ["JasonPan"]
 edition = "2021"

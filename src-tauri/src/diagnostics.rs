@@ -1,6 +1,51 @@
 //! Debug-only end-to-end checks. Never included in release installers.
 use crate::*;
 use std::{io::{Read,Write},time::{Duration,Instant}};
+pub fn vimeo_probe(app:&AppHandle)->bool{
+    let Some(dir)=std::env::var_os("VIDEOTOOL_VIMEO_PROBE") else{return false};
+    let app=app.clone();for w in app.webview_windows().values(){let _=w.hide();}
+    thread::spawn(move||{let dir=PathBuf::from(dir);let _=fs::create_dir_all(&dir);
+        for id in ["1225262877","1225264445","1225261153"]{let result=(||->Result<Value,String>{
+            let url=format!("https://vimeo.com/{id}");let mut args:Vec<OsString>=vec!["-J".into(),"--skip-download".into(),"--proxy".into(),"http://127.0.0.1:7897".into()];
+            let _lease=push_cookies_args(&app,&mut args,&url,None,None)?;args.extend(["--".into(),url.into()]);
+            let output=process::run(&resolve_tool(&app,"yt-dlp"),yt_args(&app,args),Duration::from_secs(180),|_|{})?;
+            let data:Value=serde_json::from_str(&output.stdout).map_err(|e|e.to_string())?;
+            let formats:Vec<Value>=data["formats"].as_array().ok_or("No formats")?.iter().map(|f|{let mut out=serde_json::Map::new();for key in ["format_id","ext","vcodec","acodec","height","width","abr","tbr","audio_channels","protocol","format_note"]{out.insert(key.into(),f[key].clone());}Value::Object(out)}).collect();
+            Ok(serde_json::json!({"id":id,"title":data["title"],"formats":formats,"selected":data["format_id"],"version":data["_version"]}))
+        })();let report=match result{Ok(v)=>v,Err(e)=>serde_json::json!({"error":e})};let _=atomic_json(&dir.join(format!("{id}.json")),&report);}
+        app.exit(0);
+    });true
+}
+pub fn vimeo_download(app:&AppHandle)->bool{
+    let Some(dir)=std::env::var_os("VIDEOTOOL_VIMEO_DOWNLOAD") else{return false};
+    let app=app.clone();for w in app.webview_windows().values(){let _=w.hide();}
+    thread::spawn(move||{let dir=PathBuf::from(dir);let _=fs::create_dir_all(&dir);
+        let result=(||->Result<Vec<Value>,String>{
+            // Reuse only Vimeo's existing grant through the normal lease, before isolating test storage.
+            let lease=browser_auth::lease("https://vimeo.com/1225262877")?;
+            let cookie_file=lease.as_ref().map(|l|l.0.to_string_lossy().to_string());
+            std::env::set_var("VIDEOTOOL_TEST_DIR",&dir);queue::init(&app);
+            let outputs=dir.join("outputs");fs::create_dir_all(&outputs).map_err(|e|e.to_string())?;
+            let mut reports=Vec::new();
+            for id in ["1225262877","1225264445","1225261153"]{
+                let url=format!("https://vimeo.com/{id}");
+                let metadata=probe_metadata(&app,&url,Some("http://127.0.0.1:7897"),None,cookie_file.as_deref())?;
+                let selection=select_download_formats(&metadata,None,None,None,&SaveStrategy::Auto);
+                ensure(selection.audio.is_some(),"Vimeo audio rendition was discarded")?;
+                let selector=selection.format_selector.clone();
+                let enriched_audio=serde_json::to_value(selection.audio).map_err(|e|e.to_string())?;
+                ensure(selection.audio.is_some_and(|a|a.acodec.as_deref()==Some("aac") && a.abr.is_some() && a.filesize_approx.is_some()),"Audio enrichment did not provide AAC and estimated bitrate/size")?;
+                let downloaded=engine::download(app.clone(),DownloadRequest{filename_codecs:false,filename_suffix:false,conflict_action:"number".into(),audio_only:false,url,output_dir:outputs.to_string_lossy().into(),proxy:Some("http://127.0.0.1:7897".into()),cookies_browser:None,cookies_file:cookie_file.clone(),quality_height:None,video_format_id:None,audio_format_id:None,save_strategy:SaveStrategy::Auto,metadata:Some(metadata)})?;
+                let media=crate::transcode::probe(&app,Path::new(&downloaded.output_path),false)?;
+                ensure(media.audio_index.is_some(),"Downloaded Vimeo video has no audio")?;
+                let levels=process::run(&resolve_tool(&app,"ffmpeg"),vec!["-hide_banner".into(),"-i".into(),downloaded.output_path.clone().into(),"-vn".into(),"-af".into(),"volumedetect".into(),"-f".into(),"null".into(),"NUL".into()],Duration::from_secs(120),|_|{})?;
+                let maximum=levels.stderr.lines().find(|s|s.contains("max_volume:")).ok_or("Unable to verify audio signal")?.split("max_volume:").last().unwrap_or("").trim().to_string();
+                ensure(!maximum.contains("-inf"),"Audio stream is entirely silent")?;
+                reports.push(serde_json::json!({"id":id,"parsed_audio":enriched_audio,"selector":selector,"width":media.width,"height":media.height,"duration":media.duration,"video_codec":media.codec,"audio_codec":media.audio_codec,"max_volume":maximum,"bytes":media.size,"container":downloaded.container,"output":downloaded.output_path}));
+            }Ok(reports)
+        })();let passed=result.is_ok();let report=match result{Ok(checks)=>serde_json::json!({"passed":true,"videos":checks}),Err(e)=>serde_json::json!({"passed":false,"error":e})};let _=atomic_json(&dir.join("vimeo-test-result.json"),&report);app.exit(if passed{0}else{1});
+    });true
+}
 pub fn start(app:&AppHandle)->bool{if std::env::var_os("VIDEOTOOL_SELF_TEST").is_none(){return false}let app=app.clone();for window in app.webview_windows().values(){let _=window.hide();}thread::spawn(move||{let result=run(&app);let report=match &result{Ok(checks)=>serde_json::json!({"passed":true,"checks":checks}),Err(e)=>serde_json::json!({"passed":false,"error":e})};let _=atomic_json(&app_data_dir(&app).join("self-test-result.json"),&report);app.exit(if result.is_ok(){0}else{1});});true}
 fn ensure(value:bool,message:&str)->Result<(),String>{if value{Ok(())}else{Err(message.into())}}
 fn run(app:&AppHandle)->Result<Vec<String>,String>{

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {orderedVideos,audioFor,canMp4} from '../src/formats.ts';
+import {orderedVideos,audioFor,canMp4,hasAudio,audioLabel} from '../src/formats.ts';
 const f=(id,vc,ac,h,fps=24)=>({format_id:id,vcodec:vc,acodec:ac,height:h,fps,ext:vc==='none'?'m4a':'mp4',tbr:1000,abr:128});
 const formats=[f('625','vp09.00.50.08','none',2160,60),f('401','av01.0.12M.08','none',2160),f('251','none','opus',0),f('140','none','mp4a.40.2',0)];
 const selected=orderedVideos(formats)[0];
@@ -30,3 +30,13 @@ assert.deepEqual(groupedAudio.map(g=>g.codec),['AAC','Opus']);
 assert.deepEqual(groupedAudio[0].formats.map(f=>f.abr),[128,48]);
 assert.equal(orderedVideos(formats)[0].format_id,'401');
 console.log('Codec grouping preserves default selection');
+const unknownAudio={...f('hls-audio-English','none',null,0),ext:'mp4',abr:null};
+assert.equal(hasAudio(unknownAudio),true);
+assert.equal(hasAudio({...unknownAudio,acodec:'none'}),false);
+assert.equal(hasAudio({...unknownAudio,vcodec:null}),false);
+assert.equal(audioFor([selected,unknownAudio],selected).format_id,'hls-audio-English');
+assert.equal(canMp4(selected,unknownAudio),false);
+console.log('Vimeo audio-only rendition with unknown codec remains selectable');
+
+assert.equal(audioLabel({ ...unknownAudio, abr:null }), '音轨 · 参数暂未获取');
+assert.equal(audioLabel({ ...unknownAudio, acodec:'aac', abr:128, filesize_approx:320000 }), 'AAC · 约 128 kbps · 约 0.3 MB');

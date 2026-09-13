@@ -3,6 +3,21 @@ fn format(id:&str,vc:&str,ac:&str,height:u64)->FormatInfo{FormatInfo{format_id:i
 fn metadata(formats:Vec<FormatInfo>)->ProbeResult{ProbeResult{id:"one".into(),title:"test".into(),webpage_url:"https://example.com/video".into(),extractor:"test".into(),thumbnail:None,duration_string:None,anonymous:false,best_height:None,best_vcodec:None,should_save_mkv:false,formats}}
 #[test]fn combined_stream_is_video(){let m=metadata(vec![format("combined","avc1","mp4a",1080),format("audio","none","mp4a",0)]);let s=select_download_formats(&m,None,None,None,&SaveStrategy::Auto);assert!(!s.audio_only);assert!(!s.use_mkv);assert_eq!(s.format_selector,"combined");}
 #[test]fn separated_streams_are_merged(){let m=metadata(vec![format("video","avc1","none",1080),format("audio","none","mp4a",0)]);let s=select_download_formats(&m,None,None,None,&SaveStrategy::Auto);assert_eq!(s.format_selector,"video+audio");}
+#[test]fn vimeo_hls_unknown_audio_is_not_discarded(){
+    let audio=parse_format(&serde_json::json!({"format_id":"hls-audio-English","vcodec":"none","acodec":null,"ext":"mp4"})).unwrap();
+    assert!(format_has_audio(&audio));assert_eq!(audio.acodec,None);
+    let m=metadata(vec![format("video","avc1","none",1080),audio]);
+    let s=select_download_formats(&m,None,None,None,&SaveStrategy::Auto);
+    assert_eq!(s.format_selector,"video+hls-audio-English");assert!(s.use_mkv);
+    let manual=select_download_formats(&m,None,Some("video"),Some("hls-audio-English"),&SaveStrategy::Auto);
+    assert_eq!(manual.format_selector,s.format_selector);
+    assert_eq!(best_audio_format(&m,false).unwrap().format_id,"hls-audio-English");
+}
+#[test]fn missing_codec_does_not_override_explicit_silence(){
+    assert!(!format_has_audio(&format("silent","none","none",0)));
+    let unknown=parse_format(&serde_json::json!({"format_id":"unknown"})).unwrap();assert!(!format_has_audio(&unknown));
+    let missing=parse_format(&serde_json::json!({"format_id":"audio","vcodec":"none"})).unwrap();assert!(format_has_audio(&missing));
+}
 #[test]fn height_limit_preserves_best_resolution(){let m=metadata(vec![format("vp9","vp9","none",1080),format("h264","avc1","none",720),format("audio","none","mp4a",0)]);let s=select_download_formats(&m,Some(1080),None,None,&SaveStrategy::Auto);assert_eq!(s.video.unwrap().format_id,"vp9");let limited=select_download_formats(&m,Some(720),None,None,&SaveStrategy::Auto);assert_eq!(limited.video.unwrap().height,Some(720));}
 #[test]fn audio_only_is_detected(){let m=metadata(vec![format("audio","none","mp4a",0)]);assert!(select_download_formats(&m,None,None,None,&SaveStrategy::Auto).audio_only);}
 #[test]fn invalid_explicit_video_id_cannot_choose_audio(){let m=metadata(vec![format("video","avc1","none",1080),format("audio","none","mp4a",0)]);let s=select_download_formats(&m,None,Some("audio"),None,&SaveStrategy::Auto);assert_eq!(s.video.unwrap().format_id,"video");}

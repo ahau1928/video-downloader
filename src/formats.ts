@@ -19,11 +19,21 @@ export function sizeLabel(f: Format): string {
   return `${f.filesize?'':'约 '}${value}`;
 }
 
+export function audioLabel(f: Format): string {
+  const label = codecLabel(f.acodec);
+  const parts = [label === '未知' ? '音轨' : label];
+  if (f.abr && f.abr > 0) parts.push(`约 ${Math.round(f.abr)} kbps`);
+  if (f.filesize || f.filesize_approx) parts.push(sizeLabel(f));
+  if (parts.length === 1) parts.push('参数暂未获取');
+  return parts.join(' · ');
+}
+
 // Presentation groups do not change the automatic best-format selection.
 export function groupFormats(formats: Format[], kind: 'video' | 'audio') {
   const groups = new Map<string, Format[]>();
   for (const f of formats) {
-    const name = codecLabel(kind === 'video' ? f.vcodec : f.acodec);
+    const rawName = codecLabel(kind === 'video' ? f.vcodec : f.acodec);
+    const name = kind === 'audio' && rawName === '未知' ? '音轨' : rawName;
     const group = groups.get(name) || [];
     group.push(f);
     groups.set(name, group);
@@ -39,7 +49,7 @@ export function groupFormats(formats: Format[], kind: 'video' | 'audio') {
 }
 
 const codec = (value: string | null) => (value || '').toLowerCase();
-export const hasAudio = (f?: Format) => !!f?.acodec && f.acodec !== 'none';
+export const hasAudio = (f?: Format) => !!f && (f.acodec ? f.acodec !== 'none' : f.vcodec === 'none');
 export const isAac = (f?: Format) => !!f && /^(mp4a|aac)/.test(codec(f.acodec)) && /^(m4a|mp4)$/i.test(f.ext || '');
 export const mp4Video = (f?: Format) => !!f && /^(av01|av1|avc1|h264)/.test(codec(f.vcodec)) && /^mp4$/i.test(f.ext || '');
 export const canMp4 = (v?: Format, a?: Format) => mp4Video(v) && (!a || isAac(a));
