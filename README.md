@@ -2,13 +2,13 @@
 
 面向 Windows 的视频下载与批量转码工具，使用 Vue 3 + Tauri 2 构建。
 
-**当前版本：0.4.2 · Windows x64**
+**当前版本：0.5.1 · Windows x64**
 
-[下载安装包](https://github.com/ahau1928/video-downloader/releases/latest) · [转码使用说明](docs/transcoding.md) · [浏览器登录授权说明](docs/browser-helper.md)
+[下载安装包](https://github.com/ahau1928/video-downloader/releases/latest) · [字幕使用说明](docs/subtitles.md) · [转码使用说明](docs/transcoding.md) · [浏览器登录授权说明](docs/browser-helper.md)
 
 ## 下载与安装
 
-1. 打开上方 Release 页面，在 Assets 中下载 `video-downloader_0.4.2_x64-setup.exe`。`Source code` 是开发源码，不是安装包。
+1. 打开上方 Release 页面，在 Assets 中下载 `video-downloader_0.5.1_x64-setup.exe`。`Source code` 是开发源码，不是安装包。
 2. 关闭旧版软件后运行安装包。升级后会沿用已有设置与任务历史。
 3. 打开“设置 → 网络与账号”，按本机情况配置代理。**默认代理地址为 `http://127.0.0.1:7897`，没有该代理服务时请关闭代理或修改端口。**
 
@@ -54,7 +54,7 @@ YouTube、Vimeo 等网站可能要求登录或验证。支持通过配套 **Edge
 
 默认 H.264、CRF 23、中等预设、AAC 192 kbps、原分辨率、MP4、保留源文件。H.265 的默认 CRF 为 28。目标大小会扣除音频占用并预留封装空间，但允许偏差，不能作为严格大小上限。
 
-详细行为、限制及测试范围见 [转码使用说明](docs/transcoding.md)。
+详细行为、限制及测试范围见 [字幕使用说明](docs/subtitles.md) · [转码使用说明](docs/transcoding.md)。
 
 ## 工具更新与常见问题
 
@@ -93,7 +93,7 @@ npm run tauri:build
 
 ## 第三方组件
 
-0.4.2 安装包内置以下已核验版本，软件可继续检查更新：
+0.5.1 安装包内置以下已核验版本，软件可继续检查更新：
 
 | 组件 | 版本 |
 | --- | --- |
@@ -103,3 +103,4 @@ npm run tauri:build
 | EJS（yt-dlp 内置） | 0.8.0 |
 
 来源、校验值及第三方许可见 [第三方说明](src-tauri/resources/bin/THIRD-PARTY-NOTICES.txt)、[工具清单](src-tauri/resources/bin/bundled-tools.json) 和 [FFmpeg 许可](src-tauri/resources/bin/LICENSE-FFmpeg.txt)。第三方程序保留其各自许可。
+

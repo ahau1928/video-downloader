@@ -22,9 +22,16 @@ export function sizeLabel(f: Format): string {
 export function audioLabel(f: Format): string {
   const label = codecLabel(f.acodec);
   const parts = [label === '未知' ? '音轨' : label];
+  if(label==='未知') {
+    const note=f.format_note||'';
+    if(/\blow\b/i.test(note))parts.push('低音质');
+    else if(/\bhigh\b/i.test(note))parts.push('高音质');
+  }
+  const identity=audioIdentity(f);if(identity) parts.push(identity);
+  if (audioDrc(f)) parts.push('音量动态压缩');
   if (f.abr && f.abr > 0) parts.push(`约 ${Math.round(f.abr)} kbps`);
   if (f.filesize || f.filesize_approx) parts.push(sizeLabel(f));
-  if (parts.length === 1) parts.push('参数暂未获取');
+  if (!f.abr && !f.filesize && !f.filesize_approx) parts.push('参数暂未获取');
   return parts.join(' · ');
 }
 
@@ -59,9 +66,28 @@ function rank(f: Format) {
 }
 export function audioFor(formats: Format[], v?: Format): Format | undefined {
   if (hasAudio(v)) return v;
-  const audios = formats.filter(f => (!f.vcodec || f.vcodec === 'none') && hasAudio(f)).sort((a,b) => (b.abr || 0) - (a.abr || 0));
-  const preferred = audios.find(f => /^(vp09|vp9)/.test(codec(v?.vcodec || null)) ? codec(f.acodec).startsWith('opus') : isAac(f));
-  return preferred || audios.find(isAac) || audios[0];
+  const opus=/^(vp09|vp9)/.test(codec(v?.vcodec || null));
+  const preference=(f:Format)=>opus&&codec(f.acodec).startsWith('opus')?2:isAac(f)?(opus?1:2):0;
+  return formats.filter(f => (!f.vcodec || f.vcodec === 'none') && hasAudio(f)).sort((a,b) =>
+    audioLanguageRank(b)-audioLanguageRank(a) || Number(audioDrc(a))-Number(audioDrc(b)) || preference(b)-preference(a) || (b.abr||0)-(a.abr||0) || (a.format_id<b.format_id?-1:a.format_id>b.format_id?1:0))[0];
+}
+export function audioLanguageRank(f:Format):number {
+  const note=(f.format_note||'').toLowerCase();
+  if(note.includes('original')||(f.language_preference??-1)>=10)return 3;
+  if(note.includes('descriptive')||(f.language_preference??-1)<=-10)return -1;
+  if(note.includes('(default)')||(f.language_preference??-1)>=5)return 2;
+  return 0;
+}
+export const audioDrc=(f:Format)=>f.format_id.includes('-drc')||/drc/i.test(f.format_note||'');
+export function languageLabel(language:string):string {
+  try{return new Intl.DisplayNames(['zh-CN'],{type:'language'}).of(language==='iw'?'he':language)||language}catch{return language}
+}
+export function audioIdentity(f:Format):string {
+  const parts=f.language?[languageLabel(f.language)]:[];
+  const rank=audioLanguageRank(f);
+  if(rank===3)parts.push('原声');else if(rank===2)parts.push('默认');else if(rank===-1)parts.push('口述影像');
+  else if(/dubbed-auto/i.test(f.format_note||''))parts.push('自动配音');
+  return parts.join(' · ');
 }
 export function orderedVideos(formats: Format[]): Format[] {
   return formats.filter(f => f.vcodec && f.vcodec !== 'none').sort((a,b) =>

@@ -1,16 +1,33 @@
 //! Debug-only end-to-end checks. Never included in release installers.
 use crate::*;
 use std::{io::{Read,Write},time::{Duration,Instant}};
+pub fn subtitle_test(app:&AppHandle)->bool{
+    let Some(dir)=std::env::var_os("VIDEOTOOL_SUBTITLE_TEST") else{return false};
+    app.manage(queue::Queue{data:Mutex::new(queue::Snapshot::default()),running:Mutex::new(Default::default()),transcode:Mutex::new(()),tools:std::sync::RwLock::new(()),store:PathBuf::from(&dir).join("queue.json"),closing:std::sync::atomic::AtomicBool::new(false)});
+    let app=app.clone();for w in app.webview_windows().values(){let _=w.hide();}
+    thread::spawn(move||{
+        let dir=PathBuf::from(dir);let _=fs::create_dir_all(&dir);
+        let mut settings=queue::Settings::default();settings.output_dir=dir.to_string_lossy().into();settings.subtitles.enabled=true;
+        settings.subtitles.language=std::env::var("VIDEOTOOL_SUBTITLE_LANGUAGE").unwrap_or("bilingual".into());
+        settings.subtitles.source=std::env::var("VIDEOTOOL_SUBTITLE_SOURCE").unwrap_or("prefer".into());
+        let url=std::env::var("VIDEOTOOL_SUBTITLE_URL").unwrap_or("https://www.youtube.com/watch?v=jNQXAC9IVRw".into());
+        let result=crate::subtitles::download(&app,&url,&settings,None);
+        let report=match &result{Ok(r)=>serde_json::json!({"passed":true,"output":r}),Err(e)=>serde_json::json!({"passed":false,"error":e})};
+        let _=atomic_json(&dir.join("subtitle-test-result.json"),&report);app.exit(if result.is_ok(){0}else{1});
+    });true
+}
 pub fn vimeo_probe(app:&AppHandle)->bool{
     let Some(dir)=std::env::var_os("VIDEOTOOL_VIMEO_PROBE") else{return false};
     let app=app.clone();for w in app.webview_windows().values(){let _=w.hide();}
     thread::spawn(move||{let dir=PathBuf::from(dir);let _=fs::create_dir_all(&dir);
-        for id in ["1225262877","1225264445","1225261153"]{let result=(||->Result<Value,String>{
-            let url=format!("https://vimeo.com/{id}");let mut args:Vec<OsString>=vec!["-J".into(),"--skip-download".into(),"--proxy".into(),"http://127.0.0.1:7897".into()];
+        let youtube=std::env::var_os("VIDEOTOOL_AUDIO_PROBE").is_some();
+        let ids=if youtube{vec!["9vnr69Lg4_I","vUYq38wC_xI"]}else{vec!["1225262877","1225264445","1225261153"]};
+        for id in ids{let result=(||->Result<Value,String>{
+            let url=if youtube{format!("https://www.youtube.com/watch?v={id}")}else{format!("https://vimeo.com/{id}")};let mut args:Vec<OsString>=vec!["-J".into(),"--skip-download".into(),"--proxy".into(),"http://127.0.0.1:7897".into()];
             let _lease=push_cookies_args(&app,&mut args,&url,None,None)?;args.extend(["--".into(),url.into()]);
             let output=process::run(&resolve_tool(&app,"yt-dlp"),yt_args(&app,args),Duration::from_secs(180),|_|{})?;
             let data:Value=serde_json::from_str(&output.stdout).map_err(|e|e.to_string())?;
-            let formats:Vec<Value>=data["formats"].as_array().ok_or("No formats")?.iter().map(|f|{let mut out=serde_json::Map::new();for key in ["format_id","ext","vcodec","acodec","height","width","abr","tbr","audio_channels","protocol","format_note"]{out.insert(key.into(),f[key].clone());}Value::Object(out)}).collect();
+            let formats:Vec<Value>=data["formats"].as_array().ok_or("No formats")?.iter().map(|f|{let mut out=serde_json::Map::new();for key in ["format_id","ext","vcodec","acodec","height","width","abr","tbr","audio_channels","protocol","format_note","language","language_preference"]{out.insert(key.into(),f[key].clone());}Value::Object(out)}).collect();
             Ok(serde_json::json!({"id":id,"title":data["title"],"formats":formats,"selected":data["format_id"],"version":data["_version"]}))
         })();let report=match result{Ok(v)=>v,Err(e)=>serde_json::json!({"error":e})};let _=atomic_json(&dir.join(format!("{id}.json")),&report);}
         app.exit(0);
@@ -103,7 +120,46 @@ fn run(app:&AppHandle)->Result<Vec<String>,String>{
     if std::env::var_os("VIDEOTOOL_NETWORK_TEST").is_some(){let m=probe_metadata(app,"https://www.youtube.com/watch?v=v1W9X60jc8Q",Some("http://127.0.0.1:7897"),None,None)?;let downloaded=engine::download(app.clone(),DownloadRequest{filename_codecs:false,filename_suffix:false,conflict_action:String::new(),audio_only:false,url:m.webpage_url.clone(),output_dir:output_dir.to_string_lossy().into(),proxy:Some("http://127.0.0.1:7897".into()),cookies_browser:None,cookies_file:None,quality_height:Some(360),video_format_id:None,audio_format_id:None,save_strategy:SaveStrategy::Auto,metadata:Some(m)})?;ensure(probe_media_stats(app,Path::new(&downloaded.output_path))?.duration_seconds>150.,"YouTube 输出时长不足")?;checks.push("用户提供 YouTube 视频：实际解析、完整下载、音视频输出验证".into());}
     browser_auth::self_test(app)?; checks.push("浏览器授权加密保存、解密临时文件清理、发送链接入等待队列、授权优先级及清除".into());
     checks.extend(transcode::self_test(app,&dir)?);
+    test_subtitles(app,&fixture,&output_dir)?;
+    checks.push("字幕：真实 VTT 转 SRT、双语时间轴、单独下载、同名保留、失败重试与临时文件清理".into());
     Ok(checks)
+}
+
+fn test_subtitles(app:&AppHandle,fixture:&Path,output:&Path)->Result<(),String>{
+    let bytes=fs::read(fixture).map_err(|e|e.to_string())?;
+    let listener=std::net::TcpListener::bind("127.0.0.1:0").map_err(|e|e.to_string())?;let port=listener.local_addr().unwrap().port();
+    thread::spawn(move||for stream in listener.incoming(){let Ok(mut stream)=stream else{break};let bytes=bytes.clone();thread::spawn(move||{
+        let _=stream.set_read_timeout(Some(Duration::from_secs(3)));let mut buf=[0;4096];let n=stream.read(&mut buf).unwrap_or(0);let request=String::from_utf8_lossy(&buf[..n]);let path=request.split_whitespace().nth(1).unwrap_or("");
+        let (kind,body)=match path{
+            "/en.vtt"=>("text/vtt",b"WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello\n\n00:00:02.000 --> 00:00:04.000\nNext\n".to_vec()),
+            "/zh.vtt"=>("text/vtt","WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n你好\n".as_bytes().to_vec()),
+            "/video.mp4"=>("video/mp4",bytes),
+            _=>("text/html",br#"<html><head><title>Subtitle fixture</title></head><body><video controls><source src="/video.mp4" type="video/mp4"><track kind="subtitles" src="/en.vtt" srclang="en"><track kind="subtitles" src="/zh.vtt" srclang="zh-CN"></video></body></html>"#.to_vec())};
+        let header=format!("HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len());let _=stream.write_all(header.as_bytes());if !request.starts_with("HEAD "){let _=stream.write_all(&body);}
+    });});
+    let mut settings=queue::Settings::default();settings.use_proxy=false;settings.output_dir=output.to_string_lossy().into();settings.output_mode="subtitles".into();settings.subtitles.enabled=true;
+    let url=format!("http://127.0.0.1:{port}/page.html");
+    let first=crate::subtitles::download(app,&url,&settings,None)?;let original=fs::read(&first.output_path).map_err(|e|e.to_string())?;
+    let text=String::from_utf8_lossy(&original);ensure(text.contains("你好\nHello")&&text.contains("你好\nNext"),"双语未按时间轴对齐")?;
+    let repeated=crate::subtitles::download(app,&url,&settings,None)?;ensure(first.output_path==repeated.output_path,"相同字幕未复用")?;
+    fs::write(&first.output_path,b"user edits").map_err(|e|e.to_string())?;
+    let renamed=crate::subtitles::download(app,&url,&settings,None)?;ensure(first.output_path!=renamed.output_path&&fs::read(&first.output_path).unwrap()==b"user edits","字幕覆盖了旧文件")?;
+    settings.subtitles.source="auto".into();ensure(crate::subtitles::download(app,&url,&settings,None).is_err(),"缺失自动字幕误报成功")?;
+    settings.subtitles.source="manual".into();
+    queue::add_tasks(app.clone(),queue::AddRequest{sources:vec![url.clone()],kind:"download".into(),settings:settings.clone(),metadata:None,video_format_id:None,audio_format_id:None,start:true})?;
+    let id=queue::queue_snapshot(app.clone()).tasks.last().unwrap().id.clone();let done=wait_task(app,&id,|t|t.status=="done")?;
+    ensure(done.output.as_ref().is_some_and(|o|o.container=="srt"),"仅字幕队列输出不正确")?;
+    settings.output_mode="original".into();settings.subtitles.source="auto".into();
+    queue::add_tasks(app.clone(),queue::AddRequest{sources:vec![url],kind:"download".into(),settings,metadata:None,video_format_id:None,audio_format_id:None,start:true})?;
+    let id=queue::queue_snapshot(app.clone()).tasks.last().unwrap().id.clone();let failed=wait_task(app,&id,|t|t.status=="error")?;
+    ensure(failed.subtitle_pending&&failed.downloaded.is_some(),"字幕失败未保留视频及重试阶段")?;
+    let video=failed.downloaded.unwrap().output_path;let bytes=fs::read(&video).map_err(|e|e.to_string())?;
+    queue::edit(app,&id,|t|t.settings.subtitles.source="manual".into(),true);
+    queue::task_action(app.clone(),id.clone(),"retry".into())?;
+    let done=wait_task(app,&id,|t|t.status=="done")?;
+    ensure(!done.subtitle_pending&&done.output.as_ref().is_some_and(|o|o.output_path==video)&&fs::read(&video).unwrap()==bytes,"重试字幕改变了已下载视频")?;
+    let scratch=app_data_dir(app).join("subtitle-work");ensure(!fs::read_dir(scratch).map_err(|e|e.to_string())?.flatten().any(|e|e.path().is_dir()),"字幕临时数据未清理")?;
+    Ok(())
 }
 
 fn wait_task(app:&AppHandle,id:&str,predicate:impl Fn(&queue::Task)->bool)->Result<queue::Task,String>{

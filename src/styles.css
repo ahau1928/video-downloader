@@ -801,3 +801,9 @@ summary {
 }
 .bottom-notice > span { overflow-wrap:anywhere; min-width:0; }
 @media(max-width:760px) { .bottom-notice.alert {right:16px;bottom:16px;max-width:calc(100vw - 32px);} }
+
+.subtitle-options{margin-top:16px;padding-top:14px;border-top:1px solid var(--border,#e1e3ef)}
+.subtitle-options .fields{margin-top:12px}
+.subtitle-options .fine{margin:10px 0 0;line-height:1.6}
+
+.audio-language{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px}.audio-language label{display:flex;align-items:center;gap:10px}.audio-language select{min-width:180px}

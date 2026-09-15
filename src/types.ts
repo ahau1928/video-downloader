@@ -1,4 +1,7 @@
 export interface Format {
+  language?: string | null;
+  language_preference?: number | null;
+  format_note?: string | null;
   format_id: string;
   ext: string | null;
   vcodec: string | null;
@@ -23,6 +26,7 @@ export interface Metadata {
   should_save_mkv: boolean;
 }
 export interface Settings {
+  subtitles: { enabled: boolean; language: string; source: string };
   transcode: import('./transcode').TranscodeOptions;
   output_dir: string;
   proxy: string;
@@ -47,6 +51,7 @@ export interface Output {
   log: string;
 }
 export interface Task {
+  subtitle_pending?: boolean;
   id: string;
   kind: string;
   source: string;

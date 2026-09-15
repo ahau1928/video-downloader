@@ -1,5 +1,5 @@
 use crate::*;
-fn format(id:&str,vc:&str,ac:&str,height:u64)->FormatInfo{FormatInfo{format_id:id.into(),ext:Some(if vc=="none"{"m4a"}else{"mp4"}.into()),vcodec:Some(vc.into()),acodec:Some(ac.into()),height:Some(height),fps:Some(30.),tbr:Some(1000.),filesize:None,filesize_approx:None,abr:Some(128.)}}
+fn format(id:&str,vc:&str,ac:&str,height:u64)->FormatInfo{FormatInfo{language:None,language_preference:None,format_note:None,format_id:id.into(),ext:Some(if vc=="none"{"m4a"}else{"mp4"}.into()),vcodec:Some(vc.into()),acodec:Some(ac.into()),height:Some(height),fps:Some(30.),tbr:Some(1000.),filesize:None,filesize_approx:None,abr:Some(128.)}}
 fn metadata(formats:Vec<FormatInfo>)->ProbeResult{ProbeResult{id:"one".into(),title:"test".into(),webpage_url:"https://example.com/video".into(),extractor:"test".into(),thumbnail:None,duration_string:None,anonymous:false,best_height:None,best_vcodec:None,should_save_mkv:false,formats}}
 #[test]fn combined_stream_is_video(){let m=metadata(vec![format("combined","avc1","mp4a",1080),format("audio","none","mp4a",0)]);let s=select_download_formats(&m,None,None,None,&SaveStrategy::Auto);assert!(!s.audio_only);assert!(!s.use_mkv);assert_eq!(s.format_selector,"combined");}
 #[test]fn separated_streams_are_merged(){let m=metadata(vec![format("video","avc1","none",1080),format("audio","none","mp4a",0)]);let s=select_download_formats(&m,None,None,None,&SaveStrategy::Auto);assert_eq!(s.format_selector,"video+audio");}
@@ -74,4 +74,27 @@ fn suffix_defaults_to_resolution_without_codecs() {
     assert_eq!(engine::format_suffix(Some(&v),Some(&a),false,false),"2160p");
     let settings:queue::Settings=serde_json::from_value(serde_json::json!({"filename_suffix":true})).unwrap();
     assert!(settings.filename_suffix);assert!(!settings.filename_codecs);
+}
+
+#[test]fn original_audio_beats_codec_bitrate_and_drc(){
+ let mut original=format("original","none","opus",0);original.language=Some("en-US".into());original.language_preference=Some(10.);original.abr=Some(100.);
+ let mut dub=format("dub","none","mp4a",0);dub.language=Some("ar".into());dub.abr=Some(320.);
+ let mut drc=original.clone();drc.format_id="original-drc".into();drc.abr=Some(400.);
+ let m=metadata(vec![format("v","av01","none",2160),dub,original,drc]);
+ let selected=select_download_formats(&m,None,None,None,&SaveStrategy::Auto);
+ assert_eq!(selected.audio.unwrap().format_id,"original");assert!(selected.use_mkv);
+ assert_eq!(best_audio_format(&m,false).unwrap().format_id,"original");
+ assert_eq!(select_download_formats(&m,None,None,Some("dub"),&SaveStrategy::Auto).audio.unwrap().format_id,"dub");
+}
+#[test]fn audio_metadata_roundtrip_and_default_fallback(){
+ let a=parse_format(&serde_json::json!({"format_id":"140","vcodec":"none","acodec":"mp4a","ext":"m4a","language":"en","language_preference":5,"format_note":"English (default)"})).unwrap();
+ let restored:FormatInfo=serde_json::from_value(serde_json::to_value(&a).unwrap()).unwrap();assert_eq!(restored.language.as_deref(),Some("en"));
+ let m=metadata(vec![format("other","none","mp4a",0),restored]);assert_eq!(preferred_audio_for_video(&m,None).unwrap().format_id,"140");
+}
+
+#[test]fn generic_hls_default_is_not_original_language(){
+ let hls=parse_format(&serde_json::json!({"format_id":"234","vcodec":"none","acodec":null,"format_note":"Default, high"})).unwrap();
+ let mut normal=format("140","none","mp4a",0);normal.language_preference=Some(-1.);
+ let mut drc=normal.clone();drc.format_id="140-drc".into();drc.abr=Some(129.);
+ let m=metadata(vec![hls,drc,normal]);assert_eq!(preferred_audio_for_video(&m,None).unwrap().format_id,"140");
 }

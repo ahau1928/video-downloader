@@ -4,6 +4,7 @@
 mod diagnostics;
 mod engine;
 mod audio_probe;
+mod subtitles;
 mod transcode;
 mod browser_auth;
 mod process;
@@ -56,6 +57,12 @@ struct ProbeRequest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct FormatInfo {
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    language_preference: Option<f64>,
+    #[serde(default)]
+    format_note: Option<String>,
     format_id: String,
     ext: Option<String>,
     vcodec: Option<String>,
@@ -534,6 +541,9 @@ fn bili_error(error: &str) -> String {
 fn parse_format(value: &Value) -> Option<FormatInfo> {
     let format_id = value.get("format_id")?.as_str()?.to_string();
     Some(FormatInfo {
+        language: value.get("language").and_then(Value::as_str).map(str::to_string),
+        language_preference: value.get("language_preference").and_then(Value::as_f64),
+        format_note: value.get("format_note").and_then(Value::as_str).map(str::to_string),
         format_id,
         ext: value.get("ext").and_then(Value::as_str).map(str::to_string),
         vcodec: value.get("vcodec").and_then(Value::as_str).map(str::to_string),
@@ -694,38 +704,34 @@ fn best_audio_format(metadata: &ProbeResult, aac_only: bool) -> Option<&FormatIn
             let codec = format.acodec.as_deref().unwrap_or_default().to_ascii_lowercase();
             ext_ok && (codec.starts_with("mp4a") || codec.starts_with("aac"))
         })
-        .max_by(|a, b| a.abr.partial_cmp(&b.abr).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| audio_language_rank(a).cmp(&audio_language_rank(b))
+            .then_with(||audio_drc(b).cmp(&audio_drc(a)))
+            .then_with(||a.abr.partial_cmp(&b.abr).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(||b.format_id.cmp(&a.format_id)))
 }
 
-fn preferred_audio_for_video<'a>(
-    metadata: &'a ProbeResult,
-    video: Option<&FormatInfo>,
-) -> Option<&'a FormatInfo> {
-    let video_codec = video
-        .and_then(|format| format.vcodec.as_deref())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let prefer_opus = video_codec.starts_with("vp09") || video_codec.starts_with("vp9");
-
-    metadata
-        .formats
-        .iter()
-        .filter(|format| format.vcodec.as_deref().unwrap_or("none") == "none")
-        .filter(|format| format_has_audio(format))
-        .filter(|format| {
-            let codec = format.acodec.as_deref().unwrap_or_default().to_ascii_lowercase();
-            if prefer_opus {
-                codec.starts_with("opus")
-            } else {
-                let ext_ok = format
-                    .ext
-                    .as_deref()
-                    .map(|ext| ext.eq_ignore_ascii_case("m4a") || ext.eq_ignore_ascii_case("mp4"))
-                    .unwrap_or(false);
-                ext_ok && (codec.starts_with("mp4a") || codec.starts_with("aac"))
-            }
-        })
-        .max_by(|a, b| a.abr.partial_cmp(&b.abr).unwrap_or(std::cmp::Ordering::Equal))
+// Original-language priority must precede container/bitrate preference.
+fn audio_language_rank(f: &FormatInfo) -> i32 {
+    let note=f.format_note.as_deref().unwrap_or("").to_ascii_lowercase();
+    if note.contains("original") || f.language_preference.unwrap_or(-1.) >= 10. { 3 }
+    else if note.contains("descriptive") || f.language_preference.unwrap_or(-1.) <= -10. { -1 }
+    else if note.contains("(default)") || f.language_preference.unwrap_or(-1.) >= 5. { 2 }
+    else { 0 }
+}
+fn audio_drc(f:&FormatInfo)->bool { f.format_id.contains("-drc") || f.format_note.as_deref().unwrap_or("").to_ascii_lowercase().contains("drc") }
+fn preferred_audio_for_video<'a>(metadata: &'a ProbeResult, video: Option<&FormatInfo>) -> Option<&'a FormatInfo> {
+    let opus=video.and_then(|v|v.vcodec.as_deref()).unwrap_or("").starts_with("vp");
+    let preference=|f:&FormatInfo| {
+        let codec=f.acodec.as_deref().unwrap_or("");
+        let aac=(codec.starts_with("mp4a")||codec.starts_with("aac")) && matches!(f.ext.as_deref(),Some("m4a"|"mp4"));
+        if opus && codec.starts_with("opus") {2} else if aac {if opus {1}else{2}}else{0}
+    };
+    metadata.formats.iter().filter(|f|f.vcodec.as_deref().unwrap_or("none")=="none" && format_has_audio(f))
+        .max_by(|a,b|audio_language_rank(a).cmp(&audio_language_rank(b))
+            .then_with(||audio_drc(b).cmp(&audio_drc(a)))
+            .then_with(||preference(a).cmp(&preference(b)))
+            .then_with(||a.abr.partial_cmp(&b.abr).unwrap_or(std::cmp::Ordering::Equal))
+            .then_with(||b.format_id.cmp(&a.format_id)))
 }
 
 fn build_fallback_format_selector(use_mkv: bool, height: Option<u64>) -> String {
@@ -1208,6 +1214,7 @@ fn main() {
     if browser_auth::native_entry(){return}
     tauri::Builder::default()
         .setup(|app| {
+            #[cfg(debug_assertions)] if diagnostics::subtitle_test(app.handle()){return Ok(())}
             #[cfg(debug_assertions)] if diagnostics::vimeo_download(app.handle()){return Ok(())}
             #[cfg(debug_assertions)] if diagnostics::vimeo_probe(app.handle()){return Ok(())}
             queue::init(app.handle());

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "视频下载器",
-  "version": "0.4.2",
+  "version": "0.5.1",
   "identifier": "com.jasonpan.video-downloader",
   "build": {
     "beforeDevCommand": "npm run dev",

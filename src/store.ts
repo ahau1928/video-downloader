@@ -7,6 +7,7 @@ export const desktop = Boolean(
   (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
 );
 export const settings = reactive<Settings>({
+  subtitles: {enabled:false,language:'bilingual',source:'prefer'},
   transcode: {...defaultTranscode},
   output_dir: "",
   proxy: "http://127.0.0.1:7897",
